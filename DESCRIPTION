@@ -1,5 +1,5 @@
 Package: setupCIViC
-Title: What the Package Does (One Line, Title Case)
+Title: Setup CIViC Data Releases in Postgres
 Version: 0.0.0.9000
 Authors@R: 
     person(given = "Meera",
@@ -7,7 +7,7 @@ Authors@R:
            role = c("aut", "cre"),
            email = "mpatel@concertai.com",
            comment = c(ORCID = "0000-0002-3401-3948"))
-Description: What the package does (one paragraph).
+Description: Downloads and loads the CIViC TSV releases found at https://civicdb.org/releases.  
 License: MIT + file LICENSE
 Suggests: 
     testthat (>= 3.0.0)
@@ -17,4 +17,9 @@ LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.2
 Imports: 
-    magrittr
+    magrittr,
+    tidyverse,
+    pg13,
+    glue
+Remotes: 
+    meerapatelmd/pg13

@@ -1,10 +1,24 @@
-
-
-
-
-
+#' @title
+#' Run Setup
+#'
+#' @param conn_fun PARAM_DESCRIPTION, Default: 'pg13::local_connect()'
+#' @param civic_schema PARAM_DESCRIPTION, Default: 'civic'
+#' @param log_table_name PARAM_DESCRIPTION, Default: 'setup_civic_log'
+#' @param civic_version PARAM_DESCRIPTION, Default: as.character(Sys.time())
+#' @param verbose PARAM_DESCRIPTION, Default: TRUE
+#' @param render_sql PARAM_DESCRIPTION, Default: TRUE
+#' @rdname run_setup
+#' @export
+#' @importFrom glue glue glue_collapse single_quote
+#' @importFrom pg13 send ls_tables query renderRowCount table_exists write_table
+#' @importFrom readr read_tsv cols write_csv
+#' @importFrom purrr map set_names
+#' @importFrom tibble enframe tibble
+#' @importFrom dplyr mutate
+#' @importFrom tidyr pivot_wider
 run_setup <-
-  function(civic_schema = "civic",
+  function(conn_fun = "pg13::local_connect()",
+           civic_schema = "civic",
            log_table_name = "setup_civic_log",
            civic_version = as.character(Sys.time()),
            verbose = TRUE,
@@ -171,7 +185,7 @@ for (i in seq_along(dl_links)) {
   dest_table <- names(dl_links)[i]
   ddl <-  glue::glue(ddls[[dest_table]])
 
-  pg13::send(conn_fun = "pg13::local_connect()",
+  pg13::send(conn_fun = conn_fun,
              sql_statement = ddl,
              verbose = verbose,
              render_sql = render_sql)
@@ -190,7 +204,7 @@ for (i in seq_along(dl_links)) {
 
 
   pg13::send(
-    conn_fun = "pg13::local_connect()",
+    conn_fun = conn_fun,
     sql_statement =
       glue::glue("COPY {civic_schema}.{dest_table} FROM '{tmp_csv}' NULL AS 'NA' CSV HEADER QUOTE E'\"';")
   )
@@ -201,13 +215,13 @@ for (i in seq_along(dl_links)) {
 }
 
 civic_tables <-
-  pg13::ls_tables(conn_fun = "pg13::local_connect()",
+  pg13::ls_tables(conn_fun = conn_fun,
                   schema = "civic")
 
 
 row_counts <-
   civic_tables %>%
-  purrr::map(function(x) pg13::query(conn_fun = "pg13::local_connect()",
+  purrr::map(function(x) pg13::query(conn_fun = conn_fun,
                               sql_statement = pg13::renderRowCount(schema = "civic",
                                                                    tableName = x))) %>%
   purrr::map(unlist) %>%
@@ -234,7 +248,7 @@ log_df <-
   )
 
 
-if (pg13::table_exists(conn_fun = "pg13::local_connect()",
+if (pg13::table_exists(conn_fun = conn_fun,
                        schema = "public",
                        table_name = log_table_name)) {
 
@@ -242,14 +256,14 @@ if (pg13::table_exists(conn_fun = "pg13::local_connect()",
   sql_statement <-
     glue::glue("INSERT INTO public.{log_table_name} VALUES ({row_values});")
 
-  pg13::send(conn_fun = "pg13::local_connect()",
+  pg13::send(conn_fun = conn_fun,
              sql_statement = sql_statement,
              verbose = verbose,
              render_sql = render_sql)
 
 } else {
 
-  pg13::write_table(conn_fun = "pg13::local_connect()",
+  pg13::write_table(conn_fun = conn_fun,
                     schema = "public",
                     table_name = log_table_name,
                     data = log_df)
