@@ -4,7 +4,11 @@
 
 
 run_setup <-
-  function() {
+  function(civic_schema = "civic",
+           log_table_name = "setup_civic_log",
+           civic_version = as.character(Sys.time()),
+           verbose = TRUE,
+           render_sql = TRUE) {
 # Download files
 dl_links <-
   list(
@@ -19,8 +23,8 @@ ddls <-
   list(
     GENE =
       "
-      DROP TABLE IF EXISTS civic.gene;
-      CREATE TABLE civic.gene (
+      DROP TABLE IF EXISTS {civic_schema}.gene;
+      CREATE TABLE {civic_schema}.gene (
     gene_id integer,
     gene_civic_url character varying(255),
     name character varying(255),
@@ -31,8 +35,8 @@ ddls <-
 );",
     VARIANT =
       "
-    DROP TABLE IF EXISTS civic.variant;
-    CREATE TABLE civic.variant (
+    DROP TABLE IF EXISTS {civic_schema}.variant;
+    CREATE TABLE {civic_schema}.variant (
     variant_id integer,
     variant_civic_url character varying(255),
     gene character varying(255),
@@ -66,8 +70,8 @@ ddls <-
     ",
     EVIDENCE =
       "
-    DROP TABLE IF EXISTS civic.evidence;
-    CREATE TABLE civic.evidence (
+    DROP TABLE IF EXISTS {civic_schema}.evidence;
+    CREATE TABLE {civic_schema}.evidence (
     gene character varying(255),
     entrez_id integer,
     variant character varying(255),
@@ -114,8 +118,8 @@ ddls <-
     ",
     VARIANT_GROUP =
       "
-    DROP TABLE IF EXISTS civic.variant_group;
-    CREATE TABLE civic.variant_group (
+    DROP TABLE IF EXISTS {civic_schema}.variant_group;
+    CREATE TABLE {civic_schema}.variant_group (
     variant_group_id integer,
     variant_group_civic_url character varying(255),
     variant_group character varying(255),
@@ -126,8 +130,8 @@ ddls <-
     ",
     ASSERTION =
       "
-    DROP TABLE IF EXISTS civic.assertion;
-    CREATE TABLE civic.assertion (
+    DROP TABLE IF EXISTS {civic_schema}.assertion;
+    CREATE TABLE {civic_schema}.assertion (
     gene character varying(255),
     entrez_id integer,
     variant character varying(255),
@@ -165,10 +169,12 @@ for (i in seq_along(dl_links)) {
 
   dl_link <- dl_links[[i]]
   dest_table <- names(dl_links)[i]
-  ddl <- ddls[[dest_table]]
+  ddl <-  glue::glue(ddls[[dest_table]])
 
   pg13::send(conn_fun = "pg13::local_connect()",
-             sql_statement = ddl)
+             sql_statement = ddl,
+             verbose = verbose,
+             render_sql = render_sql)
 
   tmp_tsv <- tempfile(fileext = ".tsv")
   download.file(dl_link,
@@ -186,19 +192,13 @@ for (i in seq_along(dl_links)) {
   pg13::send(
     conn_fun = "pg13::local_connect()",
     sql_statement =
-      glue::glue("COPY civic.{dest_table} FROM '{tmp_csv}' NULL AS 'NA' CSV HEADER QUOTE E'\"';")
+      glue::glue("COPY {civic_schema}.{dest_table} FROM '{tmp_csv}' NULL AS 'NA' CSV HEADER QUOTE E'\"';")
   )
 
   unlink(tmp_tsv)
   unlink(tmp_csv)
 
 }
-
-# Nightly version determined by timestamp
-civic_version <- as.character(Sys.time())
-civic_schema <- "civic"
-
-log_timestamp <- Sys.time()
 
 civic_tables <-
   pg13::ls_tables(conn_fun = "pg13::local_connect()",
@@ -207,22 +207,25 @@ civic_tables <-
 
 row_counts <-
   civic_tables %>%
-  map(function(x) pg13::query(conn_fun = "pg13::local_connect()",
+  purrr::map(function(x) pg13::query(conn_fun = "pg13::local_connect()",
                               sql_statement = pg13::renderRowCount(schema = "civic",
                                                                    tableName = x))) %>%
-  map(unlist) %>%
-  map(unname) %>%
-  set_names(civic_tables) %>%
-  enframe(name = "civic_table",
+  purrr::map(unlist) %>%
+  purrr::map(unname) %>%
+  purrr::set_names(civic_tables) %>%
+  tibble::enframe(name = "civic_table",
           value = "row_count") %>%
-  mutate(row_count = unlist(row_count)) %>%
-  pivot_wider(names_from = civic_table,
-              values_from = row_count) %>%
-  rename_all(function(x) sprintf("%s_ROWS", x))
+  dplyr::mutate(row_count = unlist(row_count)) %>%
+  tidyr::pivot_wider(names_from = civic_table,
+              values_from = row_count)
+
+
+colnames(row_counts) <-
+sprintf("%s_ROWS", colnames(row_counts))
 
 log_df <-
   cbind(
-    tibble(
+    tibble::tibble(
       sc_datetime = as.character(Sys.time()),
       civic_version = civic_version,
       civic_schema = civic_schema,
@@ -230,7 +233,6 @@ log_df <-
     row_counts
   )
 
-log_table_name <- "setup_civic_log"
 
 if (pg13::table_exists(conn_fun = "pg13::local_connect()",
                        schema = "public",
@@ -241,7 +243,9 @@ if (pg13::table_exists(conn_fun = "pg13::local_connect()",
     glue::glue("INSERT INTO public.{log_table_name} VALUES ({row_values});")
 
   pg13::send(conn_fun = "pg13::local_connect()",
-             sql_statement = sql_statement)
+             sql_statement = sql_statement,
+             verbose = verbose,
+             render_sql = render_sql)
 
 } else {
 
